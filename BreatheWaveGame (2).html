@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BreatheWave Multiplayer</title>
+  <style>
+    body {
+      margin: 0;
+      background: #0a0a0f;
+      color: white;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    h1 {
+      margin-bottom: 10px;
+    }
+    #game-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    #circle {
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #3b7bff, #002060);
+      transition: transform 1s ease-in-out, box-shadow 1s ease-in-out;
+      box-shadow: 0 0 20px #3b7bff;
+    }
+    #circle.breathe-in {
+      transform: scale(1.7);
+      box-shadow: 0 0 35px #4c98ff;
+    }
+    #circle.breathe-hold {
+      transform: scale(1.85);
+      box-shadow: 0 0 40px #6ab8ff;
+    }
+    #circle.breathe-out {
+      transform: scale(1.0);
+      box-shadow: 0 0 20px #3b7bff;
+    }
+    #hold-zone {
+      margin-top: 10px;
+      width: 130px;
+      height: 130px;
+      background: #ffffff22;
+      border-radius: 12px;
+      border: 2px dashed #5f8dff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 14px;
+      transition: background 0.3s, transform 0.3s;
+    }
+    #hold-zone.active {
+      background: #5f8dff55;
+      transform: scale(1.05);
+    }
+    #selectors {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    select {
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: none;
+      font-size: 14px;
+    }
+    #controls {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    button {
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: none;
+      font-size: 14px;
+      cursor: pointer;
+      background: #2563eb;
+      color: white;
+    }
+    button.secondary {
+      background: #4b5563;
+    }
+    #multiplayer {
+      margin-top: 10px;
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .player-box {
+      background: #ffffff11;
+      padding: 10px 20px;
+      border-radius: 10px;
+      text-align: center;
+      min-width: 150px;
+    }
+    #status {
+      margin-top: 8px;
+      font-size: 14px;
+      opacity: 0.85;
+    }
+  </style>
+</head>
+<body>
+  <h1>BreatheWave Multiplayer</h1>
+  <p>Keep your mouse on the hold-zone to stay "breathing." Follow the animated circle.</p>
+
+  <div id="game-container">
+    <div id="circle"></div>
+    <div id="hold-zone">Hold Here</div>
+
+    <div id="selectors">
+      <select id="mode-select">
+        <option value="starter">Starter (4s in / 6s out)</option>
+        <option value="flow">Flow (4s in / 5s hold / 4s out)</option>
+        <option value="recharge">Recharge (6s in / 6s out)</option>
+      </select>
+      <select id="level-select">
+        <option value="1">Level 1 – 1 min</option>
+        <option value="2">Level 2 – 3 min</option>
+        <option value="3">Level 3 – 5 min</option>
+      </select>
+    </div>
+
+    <div id="controls">
+      <button id="start-btn">Start</button>
+      <button id="pause-btn" class="secondary">Pause</button>
+      <button id="complete-btn" class="secondary">Complete</button>
+    </div>
+
+    <div id="multiplayer">
+      <div class="player-box">Player 1 Score: <span id="p1-score">0</span></div>
+      <div class="player-box">Player 2 Score: <span id="p2-score">0</span></div>
+    </div>
+
+    <div id="status">Ready</div>
+  </div>
+
+  <audio id="inhale-sound" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"></audio>
+  <audio id="exhale-sound" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg"></audio>
+
+  <script>
+    const circle = document.getElementById("circle");
+    const startBtn = document.getElementById("start-btn");
+    const pauseBtn = document.getElementById("pause-btn");
+    const completeBtn = document.getElementById("complete-btn");
+    const modeSelect = document.getElementById("mode-select");
+    const levelSelect = document.getElementById("level-select");
+    const holdZone = document.getElementById("hold-zone");
+    const p1ScoreDisplay = document.getElementById("p1-score");
+    const p2ScoreDisplay = document.getElementById("p2-score");
+    const statusDisplay = document.getElementById("status");
+
+    let p1 = 0;
+    let p2 = 0;
+    let activePlayer = 1;
+
+    let breathing = false;
+    let paused = false;
+    let holding = false;
+    let roundEndTime = null;
+
+    const inhaleSound = document.getElementById("inhale-sound");
+    const exhaleSound = document.getElementById("exhale-sound");
+
+    const modes = {
+      starter: { inhale: 4000, hold: 0, exhale: 6000 },
+      flow: { inhale: 4000, hold: 5000, exhale: 4000 },
+      recharge: { inhale: 6000, hold: 0, exhale: 6000 }
+    };
+
+    const levels = {
+      1: 60 * 1000,      // 1 min
+      2: 3 * 60 * 1000,  // 3 min
+      3: 5 * 60 * 1000   // 5 min
+    };
+
+    holdZone.addEventListener("mouseenter", () => {
+      holding = true;
+      holdZone.classList.add("active");
+    });
+
+    holdZone.addEventListener("mouseleave", () => {
+      holding = false;
+      holdZone.classList.remove("active");
+    });
+
+    function scorePoint() {
+      if (!holding || !breathing || paused) return;
+      if (activePlayer === 1) {
+        p1 += 5;
+        p1ScoreDisplay.textContent = p1;
+      } else {
+        p2 += 5;
+        p2ScoreDisplay.textContent = p2;
+      }
+    }
+
+    function swapPlayer() {
+      activePlayer = activePlayer === 1 ? 2 : 1;
+    }
+
+    function endRound(manual = false) {
+      if (!breathing) return;
+      breathing = false;
+      paused = false;
+      circle.className = "";
+      const msg = manual ? "Round ended." : "Round complete!";
+      statusDisplay.textContent = `${msg} P1: ${p1} | P2: ${p2}`;
+      pauseBtn.textContent = "Pause";
+    }
+
+    function isRoundOver() {
+      return roundEndTime && Date.now() >= roundEndTime;
+    }
+
+    async function waitWithPause(duration) {
+      let remaining = duration;
+      const step = 100;
+      while (remaining > 0 && breathing) {
+        if (!paused) {
+          const slice = Math.min(step, remaining);
+          await new Promise(res => setTimeout(res, slice));
+          remaining -= slice;
+        } else {
+          await new Promise(res => setTimeout(res, step));
+        }
+        if (isRoundOver()) break;
+      }
+    }
+
+    function animateBreath(mode) {
+      breathing = true;
+
+      async function cycle() {
+        if (!breathing) return;
+        if (isRoundOver()) { endRound(false); return; }
+
+        statusDisplay.textContent = `Player ${activePlayer}'s breath – Inhale`;
+        circle.className = "breathe-in";
+        inhaleSound.currentTime = 0;
+        inhaleSound.play();
+        await waitWithPause(mode.inhale);
+        if (!breathing || isRoundOver()) { endRound(false); return; }
+        scorePoint();
+
+        if (mode.hold > 0) {
+          statusDisplay.textContent = `Player ${activePlayer}'s breath – Hold`;
+          circle.className = "breathe-hold";
+          await waitWithPause(mode.hold);
+          if (!breathing || isRoundOver()) { endRound(false); return; }
+        }
+
+        statusDisplay.textContent = `Player ${activePlayer}'s breath – Exhale`;
+        circle.className = "breathe-out";
+        exhaleSound.currentTime = 0;
+        exhaleSound.play();
+        await waitWithPause(mode.exhale);
+        if (!breathing || isRoundOver()) { endRound(false); return; }
+        scorePoint();
+
+        swapPlayer();
+        cycle();
+      }
+
+      cycle();
+    }
+
+    startBtn.addEventListener("click", () => {
+      // reset state
+      p1 = 0;
+      p2 = 0;
+      p1ScoreDisplay.textContent = "0";
+      p2ScoreDisplay.textContent = "0";
+      activePlayer = 1;
+      paused = false;
+      breathing = false;
+      pauseBtn.textContent = "Pause";
+
+      const mode = modes[modeSelect.value];
+      const level = levels[levelSelect.value];
+      roundEndTime = Date.now() + level;
+
+      statusDisplay.textContent = "Round started! Player 1 begins.";
+      animateBreath(mode);
+    });
+
+    pauseBtn.addEventListener("click", () => {
+      if (!breathing) return;
+      paused = !paused;
+      pauseBtn.textContent = paused ? "Resume" : "Pause";
+      statusDisplay.textContent = paused
+        ? "Paused. Keep your cursor ready in the hold zone."
+        : `Resumed – Player ${activePlayer}'s breath.`;
+    });
+
+    completeBtn.addEventListener("click", () => {
+      if (!breathing) return;
+      endRound(true);
+    });
+  </script>
+</body>
+</html>
